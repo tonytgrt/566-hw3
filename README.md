@@ -1,85 +1,63 @@
 # Procedural Jellyfish
 
-## Project Overview
-In this homework, you'll create a procedural jellyfish using Houdini. This will give you a chance to dig into procedural modeling, as well as some simulation. Here is a breakdown of the different jellyfish parts you'll be putting together:
+A swimming jellyfish built procedurally in Houdini (SOPs · VEX · Vellum). One animated bell drives everything: the veins and organs ride on it, and the oral arms and tentacles are simulated hanging from it.
 
-<img height="500" alt="Jellyfish Parts" src="/assets/JellyfishParts.png">
+<p align="center"><img src="media/jellyfish.gif" alt="Animated jellyfish pulsing and swimming, with arms and tentacles trailing" width="300"></p>
+<p align="center"><a href="media/jellyfish.mp4">▶ Full-resolution video (mp4)</a></p>
 
----
+## How it fits together
 
-Here are some SideFX docs that you might find helpful:
+```mermaid
+flowchart LR
+    BELL["<b>Bell</b><br/>Line · Bend ×2 · Revolve<br/>Refine · Extrude"] -- "Time Shift f1" --> REST(("rest bell"))
+    REST --> SURF["Veins · Organs"] -- "Point Deform" --> OUT[["OUT_JELLYFISH"]]
+    REST --> CURVES["Arm spines · Tentacles"] -- "pinned roots" --> SIM["Vellum Hair<br/>one solver"]
+    SIM --> OUT
+    BELL -. "deform / pin target" .-> SURF
+    BELL -. "looped, pre-rolled" .-> SIM
+```
 
-[Geometry Nodes Documentation](https://www.sidefx.com/docs/houdini/nodes/sop/index.html)
+Every part is built on the bell frozen at frame 1, then carried by the animated bell. Surface parts use **Point Deform**. Simulated parts are **pinned with Match Animation** and run in a single Vellum solver that pre-rolls one full swim cycle, so the animation loops seamlessly.
 
-[VEX Documentation](https://www.sidefx.com/docs/houdini/vex/functions/index.html)
+## Parts
 
-## Bell and Arms
-Follow along to the videos to create the bell and arms of the jellyfish. Although I provide the values I used to create my jellyfish, you're heavily encouraged to play around and customize the setup to your liking! 
+<table>
+<tr>
+<td><img src="media/bell.png" alt="Translucent bell highlighted" height="240"></td>
+<td><b>Bell</b><br>A line bent twice and revolved into a dome, with noise and a thin extruded shell. Keyframed bend angles and height on a <code>CONTROLLER</code> null drive the pulse. Displayed translucent so the organs show through.<br><sub><code>Line</code> · <code>Bend ×2</code> · <code>Revolve</code> · <code>Attribute Noise</code> · <code>Poly Extrude</code></sub></td>
+</tr>
+<tr>
+<td align="center"><img src="media/arms.png" alt="Four oral arms highlighted" height="240"></td>
+<td><b>Oral arms</b><br>A grid ruffled in VEX, twisted and remeshed, tapered where it leaves the mouth. Four copies flare out from the mouth and hang as long as the tentacles. Each arm follows a simulated Vellum spine that is softly pinned to its rest shape, and the mesh is bent along it in VEX.<br><sub><code>Grid</code> · <code>Wrangle</code> · <code>Bend (twist)</code> · <code>Remesh</code> · <code>Copy to Points</code> · <code>Vellum Hair</code></sub></td>
+</tr>
+<tr>
+<td><img src="media/veins.png" alt="Branching veins on the bell highlighted" height="240"></td>
+<td><b>Veins</b><br>Shortest paths on the remeshed bell, from roots near the crown to tips on the rim and mid-bell. A vertically stretched noise cost makes them wander and share trunks, which become thicker where more paths overlap.<br><sub><code>Remesh</code> · <code>Find Shortest Path</code> · <code>Fuse</code> · <code>Polypath</code> · <code>Resample</code> · <code>Smooth</code> · <code>Sweep</code> · <code>Point Deform</code></sub></td>
+</tr>
+<tr>
+<td><img src="media/organs.png" alt="Four horseshoe-shaped organs under the crown highlighted" height="240"></td>
+<td><b>Organs</b><br>Four wobbly horseshoe curves generated in VEX, opening toward the center. They are dropped onto the underside of the crown and swept into tubes with rounded ends.<br><sub><code>Wrangle</code> · <code>Sweep</code> · <code>Point Deform</code></sub></td>
+</tr>
+<tr>
+<td align="center"><img src="media/tentacles.png" alt="Long tentacles hanging from the rim highlighted" height="240"></td>
+<td><b>Tentacles</b><br>40 thin curves (2.25–3.75 long) hung from the rim, with roots snapped exactly onto the moving rim. Vellum Hair with low gravity and strong drag to feel like water, and the bell as a collider.<br><sub><code>Wrangle</code> · <code>Vellum Hair</code> · <code>Vellum Solver</code> · <code>Sweep</code></sub></td>
+</tr>
+</table>
 
-[Jellyfish Bell Setup Video](https://www.youtube.com/watch?v=J3X8BB0yNRE)
+## Extra Credit: Refined bell
 
-[Jellyfish Arms Setup Video](https://www.youtube.com/watch?v=A_oNXqx8XH4)
+<p align="center"><img src="media/refined_bell.png" alt="Refined bell with scalloped lappets, pleats and dents, relaxed and contracted" width="70%"></p>
+<p align="center"><img src="media/refined_bell.gif" alt="Refined bell pulsing, pleats deepening as it contracts" width="360"><br><sub>relaxed (left) vs. contracted (right), and the pulse</sub></p>
 
-## Veins
-In order to create the veins for the jellyfish, you'll make use of the "Find Shortest Path" node. The Dungeon Corridor example in the Houdini Playground is a helpful reference for using this node. Here is some rough guidance for how to approach making the veins:
+One VEX pass after the revolve, placed in surface coordinates (angle around the axis, distance from the rim) so the details stick to the bell while it animates:
 
-Remesh the jellyfish into triangles (otherwise you'll end up with very square looking veins)
+- **Scalloped margin**: 16 rounded lappets, made by lifting the rim between lobes with `1 - |sin(8θ)|^0.5`.
+- **Pleats**: radial grooves running up from each notch. They deepen as the bell contracts by reading the same `bendMain` channel that drives the pulse.
+- **Dents**: noise dimples sampled in a polar projection so they stay smooth at the crown.
 
-<img width="300" alt="Remesh" src="/assets/Remesh.png">
+Everything downstream (veins, organs, tentacles, the simulation's collider) picks up the new shape automatically.
 
-Use the shortest path node to generate veins ([here](https://www.sidefx.com/docs/houdini/nodes/sop/findshortestpath.html) are the docs for the Find Shortest Path node)
+## Gotchas
 
-<img width="300" alt="ShortestPath" src="/assets/ShortestPath.png">
-
-Smooth out the veins for a more organic look. You might find yourself needing the "resample" and "fuse" nodes in addition to the "smooth" node (and remember, the [docs](https://www.sidefx.com/docs/houdini/nodes/sop/index.html) are a great resource if you're confused about what a node does or how to use it)
-
-<img width="300" alt="ResampleFuseSmooth" src="/assets/ResampleFuseSmooth.png">
-
-Use a "sweep" node to give the veins width
-
-<img width="300" alt="Sweep" src="/assets/Sweep.png">
-
-Lastly, stick the veins to the bell's animation using the "Point Deform" node that we used on the arms. The final result should look something like this:
-
-<img width="300" alt="VeinsGif" src="/assets/VeinsGif.gif">
-
-## Organs
-Next, create organs for your jellyfish. You can approach this any way you'd like! The final result should look something like this:
-
-<img width="300" alt="Organs" src="/assets/Organs.png">
-
-
-## Tentacles
-When you're working on Houdini projects in the future, you usually won't be able to find tutorials for exactly what you're trying to do. Instead, you'll need to be able to take semi-related tutorials and apply the relevant techniques to your projects. This exercise is designed to give you some experience with that.
-
-Your goal is to create tentacles that look like this for your jellyfish:
-
-<img width="300" alt="TentaclesGif" src="/assets/TentaclesGif.gif">
-
-[This video](https://www.youtube.com/watch?v=LN4XXaHQkmU) demonstrates how to simulate hairs to create renders like this:
-
-<img width="300" alt="HairRender3" src="/assets/HairRender1.png">
-<img width="300" alt="HairRender2" src="/assets/HairRender2.png">
-<img width="300" alt="HairRender1" src="/assets/HairRender3.png">
-
-Your task is to watch the video and extract the applicable information to make the tentacles! (also, just a heads up, the second half of the tutorial is all irrelevant rendering stuff in C4D, so you only need to watch the first 12 minutes or so).
-
-## Houdini FAQ
-[File Cache Node](https://www.youtube.com/watch?v=00s9YWDWFs0) - How do I use the File Cache node? Where does it save and how do versions work?
-
-[Simulation Caching](https://www.youtube.com/watch?v=jwIuzB9FkX0) - Why is my timeline turning blue/orange? Why isn't my simulation updating even though I made changes?
-
-## (Optional) Extra Credit
-- Add another part to your jellyfish. This can be something real (ex: crown jellyfish and lions mane jellyfish have some pretty crazy features that might be fun to recreate) or whatever zany alien jellyfish addition you can imagine!
-- Refine one of the existing parts (ex: adding scalloped edges and dents/puckering to the bell of the jellyfish)
-- Render your jellyfish (a good place to start is watching [part 4](https://www.youtube.com/watch?v=1Ph-7ZpN5oY) and [part 5](https://www.youtube.com/watch?v=mCQPDf-bupY) of Entagma's Houdini in 5 Minutes series where they briefly cover rendering basics
-- Add some flair to your scene by adding a background (ex: coral or rock formations)
-## Submission
-- Fork this repository
-- Update your README
-    - Please delete the assignment README text
-    - A description of your project
-    - A video of your animated jellyfish ([video](https://www.youtube.com/watch?v=gXtDd1lPDmc) of how to save a video of your viewport out of Houdini)
-- Create a pull request to this repository
-- Submit your Houdini file to Canvas along with a link to your pull request
-(Don't upload your houdini files to github -- it's a pain to upload big/binary files. Just canvas is fine!)
+- Vellum writes hair thickness to `pscale`, and Sweep multiplies its radius by it. Turn off *Transform Using Curve Attributes*, or the tentacles all but vanish.
+- To loop a simulation, cycle the bell with a Time Shift (`$FF - 139*floor(($FF-1)/139)`) and start the solver one cycle early, so frame 140 matches frame 1.
